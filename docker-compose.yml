@@ -1,0 +1,19 @@
+services:
+  api:
+    build: .
+    container_name: finans-api
+    ports:
+      - "5000:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Default: Data Source=/app/data/finans.db
+      Jwt__Key: KursJwtSecretKey_Min32Karakter_Olsun_2026!!
+      Jwt__Issuer: FinansKurs
+      Jwt__Audience: FinansKursStudents
+      Jwt__ExpiresMinutes: "480"
+    volumes:
+      - finans-db:/app/data
+    restart: unless-stopped
+
+volumes:
+  finans-db:
