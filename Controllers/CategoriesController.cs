@@ -10,76 +10,37 @@ namespace FinansApi.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/categories")]
-public class CategoriesController(AppDbContext db) : ControllerBase
+public class CategoriesController(
+    AppDbContext database,
+    FinansApi.Services.Categories.CategoryService service,
+    FinansApi.Services.Accounting.LegacyScope scope) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<CategoryResponse>>> GetAll([FromQuery] EntryType? type)
+    public async Task<ActionResult<IEnumerable<CategoryResponse>>> GetAll([FromQuery, System.ComponentModel.DataAnnotations.EnumDataType(typeof(EntryType))] EntryType? type)
     {
         var userId = User.GetUserId();
-        var query = db.Categories.Where(x => x.UserId == userId);
+        var companyId = await scope.Company(userId);
+        var query = database.Categories.Where(x => x.CompanyId == companyId);
         if (type.HasValue)
+        {
             query = query.Where(x => x.Type == type);
+        }
 
-        var items = await query
-            .OrderBy(x => x.Type)
-            .ThenBy(x => x.Name)
-            .Select(x => new CategoryResponse(x.Id, x.Name, x.Type))
-            .ToListAsync();
-
+        var items = await query.OrderBy(x => x.Type).ThenBy(x => x.Name).Select(x => new CategoryResponse(x.Id, x.Name, x.Type)).ToListAsync();
         return Ok(items);
     }
 
     [HttpPost]
-    public async Task<ActionResult<CategoryResponse>> Create(CategoryRequest request)
-    {
-        var userId = User.GetUserId();
-        var name = request.Name.Trim();
-        var exists = await db.Categories.AnyAsync(x =>
-            x.UserId == userId && x.Name == name && x.Type == request.Type);
-        if (exists)
-            return Conflict(new { message = "Bu kategori zaten var." });
-
-        var category = new Category
-        {
-            UserId = userId,
-            Name = name,
-            Type = request.Type
-        };
-        db.Categories.Add(category);
-        await db.SaveChangesAsync();
-
-        return CreatedAtAction(nameof(GetAll), new CategoryResponse(category.Id, category.Name, category.Type));
-    }
+    public async Task<ActionResult<CategoryResponse>> Create(CategoryRequest request) => CreatedAtAction(nameof(GetAll), await service.SaveAsync(User.GetUserId(), null, request));
 
     [HttpPut("{id:int}")]
-    public async Task<ActionResult<CategoryResponse>> Update(int id, CategoryRequest request)
-    {
-        var userId = User.GetUserId();
-        var category = await db.Categories.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId);
-        if (category is null)
-            return NotFound();
-
-        category.Name = request.Name.Trim();
-        category.Type = request.Type;
-        await db.SaveChangesAsync();
-
-        return Ok(new CategoryResponse(category.Id, category.Name, category.Type));
-    }
+    public async Task<ActionResult<CategoryResponse>> Update(int id, CategoryRequest request) => Ok(await service.SaveAsync(User.GetUserId(), id, request));
 
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var userId = User.GetUserId();
-        var category = await db.Categories.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId);
-        if (category is null)
-            return NotFound();
-
-        var hasTransactions = await db.Transactions.AnyAsync(x => x.CategoryId == id);
-        if (hasTransactions)
-            return BadRequest(new { message = "Bu kategoriye bağlı işlemler var, silemezsiniz." });
-
-        db.Categories.Remove(category);
-        await db.SaveChangesAsync();
+        await service.DeleteAsync(User.GetUserId(), id);
         return NoContent();
     }
+
 }

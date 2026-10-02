@@ -10,11 +10,14 @@ namespace FinansApi.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/transactions")]
-public class TransactionsController(AppDbContext db) : ControllerBase
+public class TransactionsController(
+    AppDbContext database,
+    FinansApi.Services.Transactions.TransactionService service,
+    FinansApi.Services.Accounting.LegacyScope scope) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<PagedResponse<TransactionResponse>>> GetAll(
-        [FromQuery] EntryType? type,
+        [FromQuery, System.ComponentModel.DataAnnotations.EnumDataType(typeof(EntryType))] EntryType? type,
         [FromQuery] int? categoryId,
         [FromQuery] DateTime? from,
         [FromQuery] DateTime? to,
@@ -23,110 +26,54 @@ public class TransactionsController(AppDbContext db) : ControllerBase
         [FromQuery] int pageSize = 10)
     {
         var userId = User.GetUserId();
+        var companyId = await scope.Company(userId);
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, 50);
-
-        var query = db.Transactions
-            .Include(x => x.Category)
-            .Where(x => x.UserId == userId);
-
+        var query = database.Transactions.Include(x => x.Category).Where(x => x.CompanyId == companyId);
         if (type.HasValue)
+        {
             query = query.Where(x => x.Type == type);
+        }
+
         if (categoryId.HasValue)
+        {
             query = query.Where(x => x.CategoryId == categoryId);
+        }
+
         if (from.HasValue)
+        {
             query = query.Where(x => x.Date >= from.Value.Date);
+        }
+
         if (to.HasValue)
+        {
             query = query.Where(x => x.Date <= to.Value.Date);
+        }
+
         if (!string.IsNullOrWhiteSpace(q))
+        {
             query = query.Where(x => x.Description != null && x.Description.Contains(q));
+        }
 
+        if (from > to)
+            throw FinansApi.Infrastructure.Errors.DomainException.Invalid("Başlangıç tarihi bitiş tarihinden sonra olamaz.");
         var totalCount = await query.CountAsync();
-        var items = await query
-            .OrderByDescending(x => x.Date)
-            .ThenByDescending(x => x.Id)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .Select(x => new TransactionResponse(
-                x.Id, x.CategoryId, x.Category.Name, x.Amount, x.Date, x.Description, x.Type))
-            .ToListAsync();
-
+        page = Math.Min(page, Math.Max(1, (int)Math.Ceiling(totalCount / (double)pageSize)));
+        var items = await query.OrderByDescending(x => x.Date).ThenByDescending(x => x.Id).Skip((page - 1) * pageSize).Take(pageSize).Select(x => new TransactionResponse(x.Id, x.CategoryId, x.Category.Name, x.Amount, x.Date, x.Description, x.Type)).ToListAsync();
         return Ok(new PagedResponse<TransactionResponse>(items, totalCount, page, pageSize));
     }
 
     [HttpPost]
-    public async Task<ActionResult<TransactionResponse>> Create(TransactionRequest request)
-    {
-        var result = await BuildEntry(0, request);
-        if (result.Error is not null)
-            return result.Error;
-
-        db.Transactions.Add(result.Entry!);
-        await db.SaveChangesAsync();
-        await db.Entry(result.Entry!).Reference(x => x.Category).LoadAsync();
-
-        return CreatedAtAction(nameof(GetAll), Map(result.Entry!));
-    }
+    public async Task<ActionResult<TransactionResponse>> Create(TransactionRequest request) => CreatedAtAction(nameof(GetAll), await service.SaveAsync(User.GetUserId(), null, request));
 
     [HttpPut("{id:int}")]
-    public async Task<ActionResult<TransactionResponse>> Update(int id, TransactionRequest request)
-    {
-        var existing = await db.Transactions
-            .Include(x => x.Category)
-            .FirstOrDefaultAsync(x => x.Id == id && x.UserId == User.GetUserId());
-        if (existing is null)
-            return NotFound();
-
-        var result = await BuildEntry(id, request);
-        if (result.Error is not null)
-            return result.Error;
-
-        existing.CategoryId = result.Entry!.CategoryId;
-        existing.Amount = result.Entry.Amount;
-        existing.Date = result.Entry.Date;
-        existing.Description = result.Entry.Description;
-        existing.Type = result.Entry.Type;
-        await db.SaveChangesAsync();
-        await db.Entry(existing).Reference(x => x.Category).LoadAsync();
-
-        return Ok(Map(existing));
-    }
+    public async Task<ActionResult<TransactionResponse>> Update(int id, TransactionRequest request) => Ok(await service.SaveAsync(User.GetUserId(), id, request));
 
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var entry = await db.Transactions.FirstOrDefaultAsync(x => x.Id == id && x.UserId == User.GetUserId());
-        if (entry is null)
-            return NotFound();
-
-        db.Transactions.Remove(entry);
-        await db.SaveChangesAsync();
+        await service.DeleteAsync(User.GetUserId(), id);
         return NoContent();
     }
 
-    private async Task<(TransactionEntry? Entry, ActionResult? Error)> BuildEntry(int id, TransactionRequest request)
-    {
-        var userId = User.GetUserId();
-        var category = await db.Categories.FirstOrDefaultAsync(x => x.Id == request.CategoryId && x.UserId == userId);
-        if (category is null)
-            return (null, BadRequest(new { message = "Kategori bulunamadı." }));
-        if (category.Type != request.Type)
-            return (null, BadRequest(new { message = "Kategori tipi ile işlem tipi uyuşmuyor." }));
-
-        var entry = new TransactionEntry
-        {
-            Id = id,
-            UserId = userId,
-            CategoryId = category.Id,
-            Amount = decimal.Round(request.Amount, 2),
-            Date = request.Date.Date,
-            Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
-            Type = request.Type,
-            Category = category
-        };
-        return (entry, null);
-    }
-
-    private static TransactionResponse Map(TransactionEntry x) =>
-        new(x.Id, x.CategoryId, x.Category.Name, x.Amount, x.Date, x.Description, x.Type);
 }

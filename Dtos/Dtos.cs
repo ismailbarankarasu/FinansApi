@@ -25,35 +25,69 @@ public class LoginRequest
 }
 
 public record AuthResponse(string Token, DateTime ExpiresAt, UserResponse User);
+
 public record UserResponse(int Id, string FullName, string Email);
 
 public class CategoryRequest
 {
+    public int? CompanyId
+    {
+        get; set;
+    }
+
     [Required, MinLength(2), MaxLength(80)]
     public string Name { get; set; } = string.Empty;
 
-    [Required]
-    public EntryType Type { get; set; }
+    [Required, EnumDataType(typeof(EntryType))]
+    public EntryType Type
+    {
+        get; set;
+    }
 }
 
 public record CategoryResponse(int Id, string Name, EntryType Type);
 
 public class TransactionRequest
 {
+    public int? CompanyId
+    {
+        get; set;
+    }
+    public int? FiscalPeriodId
+    {
+        get; set;
+    }
+
     [Required]
-    public int CategoryId { get; set; }
+    public int CategoryId
+    {
+        get; set;
+    }
 
     [Range(0.01, 100000000)]
-    public decimal Amount { get; set; }
+    public decimal Amount
+    {
+        get; set;
+    }
 
     [Required]
-    public DateTime Date { get; set; }
+    [System.Text.Json.Serialization.JsonConverter(typeof(FinansApi.Infrastructure.BusinessDateConverter))]
+    public DateTime Date
+    {
+        get; set;
+    }
 
     [MaxLength(250)]
-    public string? Description { get; set; }
+    public string? Description
+    {
+        get; set;
+    }
 
-    [Required]
-    public EntryType Type { get; set; }
+    [Required, EnumDataType(typeof(EntryType))]
+    public EntryType Type
+    {
+        get; set;
+    }
 }
 
 public record TransactionResponse(

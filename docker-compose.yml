@@ -6,11 +6,19 @@ services:
       - "5000:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ConnectionStrings__Default: Data Source=/app/data/finans.db
-      Jwt__Key: KursJwtSecretKey_Min32Karakter_Olsun_2026!!
+      ConnectionStrings__Default: Data Source=/app/data/finans-accounting.db
+      Jwt__Key: ${JWT_KEY:?Set JWT_KEY in .env}
       Jwt__Issuer: FinansKurs
       Jwt__Audience: FinansKursStudents
       Jwt__ExpiresMinutes: "480"
+      Seed__Demo: ${SEED_DEMO:-false}
+      Automation__Enabled: ${AUTOMATION_ENABLED:-true}
+      Smtp__Host: ${SMTP_HOST:-}
+      Smtp__Port: ${SMTP_PORT:-1025}
+      Smtp__From: ${SMTP_FROM:-}
+      Smtp__Username: ${SMTP_USERNAME:-}
+      Smtp__Password: ${SMTP_PASSWORD:-}
+      Smtp__EnableSsl: ${SMTP_ENABLE_SSL:-false}
     volumes:
       - finans-db:/app/data
     restart: unless-stopped

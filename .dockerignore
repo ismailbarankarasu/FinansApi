@@ -1,4 +1,11 @@
-bin/
-obj/
-data/
+.git/
+.vs/
+**/bin/
+**/obj/
+artifacts/
+tests/
+.env
 *.db
+*.db-wal
+*.db-shm
+*.legacy-backup
